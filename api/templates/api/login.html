@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Login - DjangoServicios</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+
+    .card { background: white; border-radius: 12px; padding: 40px; width: 100%; max-width: 420px; box-shadow: 0 4px 24px rgba(0,0,0,0.1); }
+
+    h2 { text-align: center; margin-bottom: 8px; color: #1a1a2e; }
+    .subtitle { text-align: center; color: #888; font-size: 14px; margin-bottom: 28px; }
+
+    label { display: block; font-size: 13px; font-weight: 600; color: #444; margin-bottom: 6px; }
+    input { width: 100%; padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; outline: none; transition: border-color .2s; }
+    input:focus { border-color: #4f46e5; }
+    .field { margin-bottom: 18px; }
+
+    button { width: 100%; padding: 12px; background: #4f46e5; color: white; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; transition: background .2s; }
+    button:hover { background: #4338ca; }
+    button:disabled { background: #a5b4fc; cursor: not-allowed; }
+
+    #resultado { margin-top: 28px; display: none; }
+
+    /* Panel admin */
+    .panel-admin { background: #1e1b4b; color: white; border-radius: 10px; padding: 24px; }
+    .panel-admin h3 { color: #a5b4fc; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+    .panel-admin .bienvenida { font-size: 20px; font-weight: 700; margin-bottom: 16px; }
+    .panel-admin .badge { display: inline-block; background: #4f46e5; color: white; font-size: 11px; padding: 2px 10px; border-radius: 20px; margin-bottom: 16px; }
+
+    /* Panel usuario */
+    .panel-usuario { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 24px; }
+    .panel-usuario h3 { color: #16a34a; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+    .panel-usuario .bienvenida { font-size: 20px; font-weight: 700; color: #14532d; margin-bottom: 16px; }
+    .panel-usuario .badge { display: inline-block; background: #16a34a; color: white; font-size: 11px; padding: 2px 10px; border-radius: 20px; margin-bottom: 16px; }
+
+    /* Panel invitado */
+    .panel-invitado { background: #fafafa; border: 1px solid #e5e7eb; border-radius: 10px; padding: 24px; }
+    .panel-invitado h3 { color: #6b7280; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+    .panel-invitado .bienvenida { font-size: 20px; font-weight: 700; color: #374151; margin-bottom: 16px; }
+    .panel-invitado .badge { display: inline-block; background: #6b7280; color: white; font-size: 11px; padding: 2px 10px; border-radius: 20px; margin-bottom: 16px; }
+
+    ul.acciones { list-style: none; padding: 0; }
+    ul.acciones li { background: rgba(255,255,255,0.08); margin-bottom: 6px; padding: 8px 12px; border-radius: 6px; font-size: 13px; font-family: monospace; }
+    .panel-usuario ul.acciones li, .panel-invitado ul.acciones li { background: rgba(0,0,0,0.05); color: #374151; }
+
+    .token-box { margin-top: 16px; background: rgba(255,255,255,0.1); border-radius: 6px; padding: 10px 12px; font-family: monospace; font-size: 11px; word-break: break-all; color: #c7d2fe; }
+    .panel-usuario .token-box, .panel-invitado .token-box { background: rgba(0,0,0,0.05); color: #374151; }
+
+    .error-box { background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 16px 20px; color: #991b1b; font-size: 14px; }
+  </style>
+</head>
+<body>
+<div class="card">
+  <h2>DjangoServicios</h2>
+  <p class="subtitle">Ingresa con tu cuenta para continuar</p>
+
+  <form id="loginForm">
+    <div class="field">
+      <label for="username">Usuario</label>
+      <input id="username" type="text" placeholder="admin / juan / maria" autocomplete="username" />
+    </div>
+    <div class="field">
+      <label for="password">Contraseña</label>
+      <input id="password" type="password" placeholder="••••••••" autocomplete="current-password" />
+    </div>
+    <button type="submit" id="btn">Iniciar sesión</button>
+  </form>
+
+  <div id="resultado"></div>
+</div>
+
+<script>
+  document.getElementById('loginForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('btn');
+    const resultado = document.getElementById('resultado');
+    btn.disabled = true;
+    btn.textContent = 'Verificando...';
+    resultado.style.display = 'none';
+
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value.trim();
+
+    try {
+      const res = await fetch('/api/login/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+
+      const data = await res.json();
+      resultado.style.display = 'block';
+
+      if (!res.ok) {
+        resultado.innerHTML = `<div class="error-box">❌ ${data.error || 'Credenciales incorrectas.'}</div>`;
+        return;
+      }
+
+      const acciones = (data.acciones_disponibles || [])
+        .map(a => `<li>${a}</li>`).join('');
+
+      const tokenHtml = data.access_token
+        ? `<div class="token-box">🔑 Token: ${data.access_token}</div>`
+        : '';
+
+      if (data.rol === 'admin') {
+        resultado.innerHTML = `
+          <div class="panel-admin">
+            <h3>Panel de administración</h3>
+            <div class="bienvenida">${data.mensaje}</div>
+            <span class="badge">👑 ADMIN</span>
+            <p style="font-size:13px;color:#c7d2fe;margin-bottom:12px">${data.panel}</p>
+            <ul class="acciones">${acciones}</ul>
+            ${tokenHtml}
+          </div>`;
+      } else if (data.rol === 'usuario') {
+        resultado.innerHTML = `
+          <div class="panel-usuario">
+            <h3>Panel de usuario</h3>
+            <div class="bienvenida">${data.mensaje}</div>
+            <span class="badge">🛒 USUARIO</span>
+            <p style="font-size:13px;color:#15803d;margin-bottom:12px">${data.panel}</p>
+            <ul class="acciones">${acciones}</ul>
+            ${tokenHtml}
+          </div>`;
+      } else {
+        resultado.innerHTML = `
+          <div class="panel-invitado">
+            <h3>Acceso de invitado</h3>
+            <div class="bienvenida">${data.mensaje}</div>
+            <span class="badge">👤 INVITADO</span>
+            <p style="font-size:13px;color:#6b7280;margin-bottom:12px">${data.panel}</p>
+            <ul class="acciones">${acciones}</ul>
+          </div>`;
+      }
+
+    } catch (err) {
+      resultado.style.display = 'block';
+      resultado.innerHTML = `<div class="error-box">❌ Error de conexión con el servidor.</div>`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Iniciar sesión';
+    }
+  });
+</script>
+</body>
+</html>
