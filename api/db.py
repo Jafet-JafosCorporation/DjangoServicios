@@ -27,3 +27,4 @@ class _LazyCollection:
 users    = _LazyCollection('users')
 products = _LazyCollection('products')
 orders   = _LazyCollection('orders')
+reviews  = _LazyCollection('reviews')

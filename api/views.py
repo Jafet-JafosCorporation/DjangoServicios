@@ -8,7 +8,9 @@ from rest_framework.response import Response
 from rest_framework import status
 import jwt
 
-from api.db import users as users_col, products as products_col, orders as orders_col
+from datetime import date
+from bson import ObjectId
+from api.db import users as users_col, products as products_col, orders as orders_col, reviews as reviews_col
 from api.permissions import IsAdmin, IsUsuario
 
 PROJECTION = {'_id': 0}
@@ -206,3 +208,61 @@ class AdminUsuarioDetalleView(APIView):
         if result.deleted_count == 0:
             return Response({'error': 'Usuario no encontrado.'}, status=404)
         return Response({'mensaje': f'Usuario {username} eliminado.'})
+
+
+# ---------------------------------------------------------------------------
+# Reviews (GET publico, POST requiere usuario, DELETE requiere admin)
+# ---------------------------------------------------------------------------
+
+def _serialize_review(r):
+    r['id'] = str(r.pop('_id'))
+    return r
+
+
+class ReviewsView(APIView):
+
+    def get_permissions(self):
+        if self.request.method == 'POST':
+            return [IsUsuario()]
+        return []
+
+    def get(self, _request, pk):
+        if not products_col.find_one({'id': pk}, PROJECTION):
+            return Response({'error': 'Producto no encontrado.'}, status=404)
+        result = [_serialize_review(r) for r in reviews_col.find({'product_id': pk})]
+        return Response({'product_id': pk, 'total': len(result), 'reviews': result})
+
+    def post(self, request, pk):
+        if not products_col.find_one({'id': pk}, PROJECTION):
+            return Response({'error': 'Producto no encontrado.'}, status=404)
+
+        rating = request.data.get('rating')
+        comment = request.data.get('comment', '').strip()
+
+        if rating is None or not str(rating).isdigit() or not (1 <= int(rating) <= 5):
+            return Response({'error': 'rating debe ser un numero entre 1 y 5.'}, status=400)
+        if not comment:
+            return Response({'error': 'El comentario no puede estar vacio.'}, status=400)
+
+        review = {
+            'product_id': pk,
+            'username': request.user.username,
+            'rating': int(rating),
+            'comment': comment,
+            'fecha': date.today().isoformat(),
+        }
+        reviews_col.insert_one(review)
+        return Response({'mensaje': 'Review agregada.', 'review': _serialize_review(review)}, status=201)
+
+
+class AdminReviewDetalleView(APIView):
+    permission_classes = [IsAdmin]
+
+    def delete(self, _request, review_id):
+        try:
+            result = reviews_col.delete_one({'_id': ObjectId(review_id)})
+        except Exception:
+            return Response({'error': 'ID de review invalido.'}, status=400)
+        if result.deleted_count == 0:
+            return Response({'error': 'Review no encontrada.'}, status=404)
+        return Response({'mensaje': f'Review {review_id} eliminada.'})

@@ -8,6 +8,8 @@ from api.views import (
     AdminUsuarioDetalleView,
     AdminOrdenesView,
     AdminProductosView,
+    ReviewsView,
+    AdminReviewDetalleView,
 )
 
 urlpatterns = [
@@ -21,4 +23,6 @@ urlpatterns = [
     path('admin/ordenes/', AdminOrdenesView.as_view()),
     path('admin/productos/', AdminProductosView.as_view()),
     path('admin/productos/<int:pk>/', AdminProductosView.as_view()),
+    path('productos/<int:pk>/reviews/', ReviewsView.as_view()),
+    path('admin/reviews/<str:review_id>/', AdminReviewDetalleView.as_view()),
 ]
