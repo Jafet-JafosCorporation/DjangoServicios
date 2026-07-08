@@ -3,7 +3,7 @@ from rest_framework.exceptions import AuthenticationFailed
 from django.conf import settings
 import jwt
 
-from api.data import USERS
+from api.db import users as users_col
 
 
 class InMemoryUser:
@@ -38,9 +38,12 @@ class InMemoryJWTAuthentication(BaseAuthentication):
             raise AuthenticationFailed('Token inválido.')
 
         username = payload.get('username')
-        if not username or username not in USERS:
+        if not username:
             raise AuthenticationFailed('Usuario no encontrado.')
 
-        user_data = USERS[username]
+        user_data = users_col.find_one({'username': username})
+        if not user_data:
+            raise AuthenticationFailed('Usuario no encontrado.')
+
         user = InMemoryUser(username=username, role=user_data['role'])
         return (user, token)

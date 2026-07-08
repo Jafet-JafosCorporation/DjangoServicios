@@ -1,24 +1,22 @@
-"""
-In-memory store: users and products.
-Passwords are stored in plain text only for this demo.
-"""
+# Passwords stored as PBKDF2-SHA256 hashes (Django hashers).
+# Plain text originals: admin=admin123, juan=juan123, maria=maria123
 
 USERS = {
     'admin': {
         'username': 'admin',
-        'password': 'admin123',
+        'password': 'pbkdf2_sha256$1200000$gjvn8ufH5eh83JqKwwpn93$LQkiXs7qzabCyKhXK9Ix/773Ahrq59Dg1RIap30VrEU=',
         'role': 'admin',
         'email': 'admin@tienda.com',
     },
     'juan': {
         'username': 'juan',
-        'password': 'juan123',
+        'password': 'pbkdf2_sha256$1200000$5o4rHKO5KpDzwWGiPdRbLW$S/+5nTV0FVUwmGpm6JBMicwJbT0aZoFD7/s4y/J5RH4=',
         'role': 'usuario',
         'email': 'juan@correo.com',
     },
     'maria': {
         'username': 'maria',
-        'password': 'maria123',
+        'password': 'pbkdf2_sha256$1200000$sUj7pXhX2zCrAT7ioHZ1O4$unj2TEJPqdYUQw8PMNwtgj5j27yxyqVy9nJPoF31k40=',
         'role': 'usuario',
         'email': 'maria@correo.com',
     },
