@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>DjangoServicios</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: sans-serif; font-size: 14px; color: #222; background: #f5f5f5; }
+
+    /* HEADER */
+    header { background: #fff; border-bottom: 1px solid #ddd; padding: 12px 24px; display: flex; align-items: center; gap: 16px; }
+    header h1 { font-size: 18px; flex: 1; }
+    #auth-info { display: flex; align-items: center; gap: 10px; }
+    #auth-info span { font-size: 13px; color: #555; }
+    button { padding: 6px 14px; border: 1px solid #aaa; background: #fff; border-radius: 4px; cursor: pointer; font-size: 13px; }
+    button:hover { background: #f0f0f0; }
+    button.primary { background: #2563eb; color: #fff; border-color: #2563eb; }
+    button.primary:hover { background: #1d4ed8; }
+    button.danger { background: #dc2626; color: #fff; border-color: #dc2626; }
+    button.danger:hover { background: #b91c1c; }
+
+    /* LAYOUT */
+    .container { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
+    section { background: #fff; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 20px; padding: 20px; }
+    section h2 { font-size: 15px; margin-bottom: 14px; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+
+    /* TABLES */
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; padding: 8px 10px; background: #f9f9f9; border-bottom: 1px solid #ddd; font-weight: 600; }
+    td { padding: 8px 10px; border-bottom: 1px solid #eee; vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+
+    /* FORMS */
+    form.inline { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 14px; padding-top: 14px; border-top: 1px solid #eee; }
+    form.inline input, form.inline select { padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
+    form.inline input[type=number] { width: 90px; }
+
+    /* LOGIN PANEL */
+    #login-panel { display: flex; gap: 8px; align-items: center; }
+    #login-panel input { padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 130px; }
+
+    /* API CONFIG */
+    #api-config { display: flex; gap: 8px; align-items: center; }
+    #api-config input { padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 220px; }
+
+    /* CART */
+    #cart-total { margin-top: 12px; font-weight: bold; font-size: 14px; }
+
+    /* TABS */
+    .tabs { display: flex; gap: 0; border-bottom: 1px solid #ddd; margin-bottom: 16px; }
+    .tab { padding: 8px 18px; cursor: pointer; border: 1px solid transparent; font-size: 13px; background: none; border-radius: 4px 4px 0 0; }
+    .tab.active { border-color: #ddd; border-bottom-color: #fff; background: #fff; font-weight: 600; }
+
+    /* MESSAGES */
+    .msg { padding: 8px 12px; border-radius: 4px; font-size: 13px; margin-bottom: 10px; }
+    .msg.ok { background: #dcfce7; color: #166534; }
+    .msg.err { background: #fee2e2; color: #991b1b; }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>DjangoServicios</h1>
+  <div id="api-config">
+    <label for="inp-api-base" style="font-size:13px;color:#555">API:</label>
+    <input id="inp-api-base" type="text" placeholder="http://IP-SERVIDOR:8000" />
+    <button onclick="guardarApiBase()">Usar</button>
+  </div>
+  <div id="auth-info">
+    <div id="login-panel">
+      <input id="inp-user" type="text" placeholder="Usuario" />
+      <input id="inp-pass" type="password" placeholder="Contrasena" />
+      <button class="primary" onclick="doLogin()">Entrar</button>
+    </div>
+    <div id="user-panel" class="hidden">
+      <span id="user-label"></span>
+      <button onclick="doLogout()">Cerrar sesion</button>
+    </div>
+  </div>
+</header>
+
+<div class="container">
+  <div id="msg-global"></div>
+
+  <!-- CATALOGO (siempre visible) -->
+  <section id="section-catalogo">
+    <h2>Catalogo de productos</h2>
+    <table id="tabla-productos">
+      <thead><tr><th>ID</th><th>Nombre</th><th>Precio</th><th>Stock</th><th id="col-accion" class="hidden">Accion</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <!-- CARRITO (solo usuario) -->
+  <section id="section-carrito" class="hidden">
+    <h2>Carrito</h2>
+    <table id="tabla-carrito">
+      <thead><tr><th>Producto</th><th>Precio</th><th>Cant.</th><th>Subtotal</th><th>Accion</th></tr></thead>
+      <tbody><tr><td colspan="5" style="color:#888">El carrito esta vacio.</td></tr></tbody>
+    </table>
+    <div id="cart-total">Total: $0.00</div>
+    <div style="margin-top:12px">
+      <button class="primary" onclick="doCompra()">Comprar</button>
+    </div>
+  </section>
+
+  <!-- HISTORIAL DE COMPRAS (solo usuario) -->
+  <section id="section-historial" class="hidden">
+    <h2>Mis compras</h2>
+    <table id="tabla-historial">
+      <thead><tr><th>Producto</th><th>Cant.</th><th>Total</th></tr></thead>
+      <tbody><tr><td colspan="3" style="color:#888">Sin compras aun.</td></tr></tbody>
+    </table>
+  </section>
+
+  <!-- PANEL ADMIN -->
+  <section id="section-admin" class="hidden">
+    <h2>Panel de administracion</h2>
+
+    <div class="tabs">
+      <button class="tab active" onclick="showTab('tab-prod')">Productos</button>
+      <button class="tab" onclick="showTab('tab-users')">Usuarios</button>
+      <button class="tab" onclick="showTab('tab-orders')">Ordenes</button>
+    </div>
+
+    <!-- Tab Productos -->
+    <div id="tab-prod">
+      <table id="admin-tabla-prod">
+        <thead><tr><th>ID</th><th>Nombre</th><th>Precio</th><th>Stock</th><th>Acciones</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <form class="inline" onsubmit="crearProducto(event)">
+        <strong style="width:100%;margin-bottom:4px">Agregar producto</strong>
+        <input id="np-nombre" type="text" placeholder="Nombre" required />
+        <input id="np-precio" type="number" placeholder="Precio" step="0.01" required />
+        <input id="np-stock" type="number" placeholder="Stock" required />
+        <button class="primary" type="submit">Agregar</button>
+      </form>
+    </div>
+
+    <!-- Tab Usuarios -->
+    <div id="tab-users" class="hidden">
+      <table id="admin-tabla-users">
+        <thead><tr><th>Username</th><th>Email</th><th>Rol</th><th>Acciones</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <form class="inline" onsubmit="crearUsuario(event)">
+        <strong style="width:100%;margin-bottom:4px">Agregar usuario</strong>
+        <input id="nu-username" type="text" placeholder="Username" required />
+        <input id="nu-email" type="email" placeholder="Email" />
+        <input id="nu-password" type="text" placeholder="Contrasena" required />
+        <select id="nu-role">
+          <option value="usuario">usuario</option>
+          <option value="admin">admin</option>
+        </select>
+        <button class="primary" type="submit">Agregar</button>
+      </form>
+    </div>
+
+    <!-- Tab Ordenes -->
+    <div id="tab-orders" class="hidden">
+      <table id="admin-tabla-orders">
+        <thead><tr><th>Usuario</th><th>Producto</th><th>Cant.</th><th>Total</th></tr></thead>
+        <tbody><tr><td colspan="4" style="color:#888">Sin ordenes.</td></tr></tbody>
+      </table>
+      <div style="margin-top:10px">
+        <button onclick="cargarOrdenes()">Recargar</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- MODAL EDITAR PRODUCTO -->
+<div id="modal-overlay" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:100">
+  <div style="background:#fff;border-radius:6px;padding:24px;min-width:320px">
+    <h3 style="margin-bottom:16px;font-size:15px">Editar producto</h3>
+    <input type="hidden" id="edit-id" />
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <input id="edit-nombre" type="text" placeholder="Nombre" style="padding:8px;border:1px solid #ccc;border-radius:4px" />
+      <input id="edit-precio" type="number" step="0.01" placeholder="Precio" style="padding:8px;border:1px solid #ccc;border-radius:4px" />
+      <input id="edit-stock" type="number" placeholder="Stock" style="padding:8px;border:1px solid #ccc;border-radius:4px" />
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="primary" onclick="guardarEdicion()">Guardar</button>
+      <button onclick="cerrarModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Esta pagina se sirve en su PROPIO puerto (distinto al de Django), asi que
+  // toda llamada a la API es cross-origin de verdad y CORS_ALLOW_ALL_ORIGINS /
+  // CORS_ALLOWED_ORIGINS en el backend controlan si funciona o no.
+  let API_BASE = localStorage.getItem('api_base') || 'http://localhost:8000';
+  document.getElementById('inp-api-base').value = API_BASE;
+
+  function guardarApiBase() {
+    API_BASE = document.getElementById('inp-api-base').value.trim().replace(/\/$/, '');
+    localStorage.setItem('api_base', API_BASE);
+    showMsg('API configurada: ' + API_BASE, 'ok');
+    cargarProductos();
+  }
+
+  let token = null;
+  let rol = null;
+  let username = null;
+  const carrito = {};
+
+  // -------------------------
+  // AUTH
+  // -------------------------
+  async function doLogin() {
+    const u = document.getElementById('inp-user').value.trim();
+    const p = document.getElementById('inp-pass').value.trim();
+    const res = await fetch(`${API_BASE}/api/login/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: u, password: p }),
+    });
+    const data = await res.json();
+    if (!res.ok) { showMsg(data.error || 'Credenciales incorrectas.', 'err'); return; }
+
+    token = data.access_token;
+    rol = data.rol;
+    username = u;
+
+    document.getElementById('login-panel').classList.add('hidden');
+    document.getElementById('user-panel').classList.remove('hidden');
+    document.getElementById('user-label').textContent = `${username} (${rol})`;
+    document.getElementById('inp-pass').value = '';
+
+    applyRole();
+    cargarProductos();
+  }
+
+  function doLogout() {
+    token = null; rol = null; username = null;
+    Object.keys(carrito).forEach(k => delete carrito[k]);
+    document.getElementById('login-panel').classList.remove('hidden');
+    document.getElementById('user-panel').classList.add('hidden');
+    document.getElementById('section-carrito').classList.add('hidden');
+    document.getElementById('section-historial').classList.add('hidden');
+    document.getElementById('section-admin').classList.add('hidden');
+    document.getElementById('col-accion').classList.add('hidden');
+    cargarProductos();
+    clearMsg();
+  }
+
+  function applyRole() {
+    const colAccion = document.getElementById('col-accion');
+    if (rol === 'usuario') {
+      document.getElementById('section-carrito').classList.remove('hidden');
+      document.getElementById('section-historial').classList.remove('hidden');
+      colAccion.classList.remove('hidden');
+      cargarHistorial();
+    } else if (rol === 'admin') {
+      document.getElementById('section-admin').classList.remove('hidden');
+      colAccion.classList.remove('hidden');
+      cargarAdminProductos();
+      cargarAdminUsuarios();
+    }
+  }
+
+  // -------------------------
+  // CATALOGO
+  // -------------------------
+  async function cargarProductos() {
+    try {
+      const res = await fetch(`${API_BASE}/api/productos/`);
+      const data = await res.json();
+      renderProductos(data.productos || []);
+    } catch (e) {
+      showMsg('No se pudo cargar el catalogo (revisa CORS/consola): ' + e.message, 'err');
+    }
+  }
+
+  function renderProductos(productos) {
+    const tbody = document.querySelector('#tabla-productos tbody');
+    tbody.innerHTML = '';
+    productos.forEach(p => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${p.id}</td><td>${p.nombre}</td><td>$${p.precio.toFixed(2)}</td><td>${p.stock}</td>`;
+      if (rol === 'usuario') {
+        const td = document.createElement('td');
+        td.innerHTML = `<button onclick="agregarCarrito(${p.id},'${p.nombre}',${p.precio})">Agregar</button>`;
+        tr.appendChild(td);
+      } else if (rol === 'admin') {
+        const td = document.createElement('td');
+        td.innerHTML = `<button onclick="abrirEditar(${p.id},'${p.nombre}',${p.precio},${p.stock})">Editar</button> <button class="danger" onclick="eliminarProducto(${p.id})">Eliminar</button>`;
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    });
+  }
+
+  // -------------------------
+  // CARRITO
+  // -------------------------
+  function agregarCarrito(id, nombre, precio) {
+    if (!carrito[id]) carrito[id] = { nombre, precio, qty: 0 };
+    carrito[id].qty++;
+    renderCarrito();
+  }
+
+  function quitarCarrito(id) {
+    if (carrito[id]) { carrito[id].qty--; if (carrito[id].qty <= 0) delete carrito[id]; }
+    renderCarrito();
+  }
+
+  function renderCarrito() {
+    const tbody = document.querySelector('#tabla-carrito tbody');
+    const items = Object.entries(carrito);
+    if (items.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="color:#888">El carrito esta vacio.</td></tr>';
+      document.getElementById('cart-total').textContent = 'Total: $0.00';
+      return;
+    }
+    let total = 0;
+    tbody.innerHTML = '';
+    items.forEach(([id, item]) => {
+      const sub = item.precio * item.qty;
+      total += sub;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${item.nombre}</td><td>$${item.precio.toFixed(2)}</td><td>${item.qty}</td><td>$${sub.toFixed(2)}</td><td><button onclick="quitarCarrito(${id})">Quitar</button></td>`;
+      tbody.appendChild(tr);
+    });
+    document.getElementById('cart-total').textContent = `Total: $${total.toFixed(2)}`;
+  }
+
+  async function doCompra() {
+    const items = Object.entries(carrito);
+    if (items.length === 0) { showMsg('El carrito esta vacio.', 'err'); return; }
+    for (const [id, item] of items) {
+      const res = await fetch(`${API_BASE}/api/compras/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ product_id: parseInt(id), quantity: item.qty }),
+      });
+      if (!res.ok) { const d = await res.json(); showMsg(d.error || 'Error en compra.', 'err'); return; }
+    }
+    Object.keys(carrito).forEach(k => delete carrito[k]);
+    renderCarrito();
+    showMsg('Compra realizada correctamente.', 'ok');
+    cargarProductos();
+    cargarHistorial();
+  }
+
+  async function cargarHistorial() {
+    const res = await fetch(`${API_BASE}/api/mis-compras/`, { headers: { 'Authorization': `Bearer ${token}` } });
+    const data = await res.json();
+    const tbody = document.querySelector('#tabla-historial tbody');
+    const items = data.compras || [];
+    if (items.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="3" style="color:#888">Sin compras aun.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = '';
+    items.forEach(c => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${c.nombre}</td><td>${c.quantity}</td><td>$${c.total.toFixed(2)}</td>`;
+      tbody.appendChild(tr);
+    });
+  }
+
+  // -------------------------
+  // ADMIN - PRODUCTOS
+  // -------------------------
+  async function cargarAdminProductos() {
+    const res = await fetch(`${API_BASE}/api/productos/`);
+    const data = await res.json();
+    renderAdminProductos(data.productos || []);
+  }
+
+  function renderAdminProductos(productos) {
+    const tbody = document.querySelector('#admin-tabla-prod tbody');
+    tbody.innerHTML = '';
+    productos.forEach(p => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${p.id}</td><td>${p.nombre}</td><td>$${p.precio.toFixed(2)}</td><td>${p.stock}</td>
+        <td><button onclick="abrirEditar(${p.id},'${p.nombre}',${p.precio},${p.stock})">Editar</button>
+            <button class="danger" onclick="eliminarProducto(${p.id})">Eliminar</button></td>`;
+      tbody.appendChild(tr);
+    });
+  }
+
+  async function crearProducto(e) {
+    e.preventDefault();
+    const res = await fetch(`${API_BASE}/api/admin/productos/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({
+        nombre: document.getElementById('np-nombre').value,
+        precio: document.getElementById('np-precio').value,
+        stock: document.getElementById('np-stock').value,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) { showMsg(data.error || 'Error.', 'err'); return; }
+    showMsg('Producto creado.', 'ok');
+    e.target.reset();
+    cargarAdminProductos();
+    cargarProductos();
+  }
+
+  function abrirEditar(id, nombre, precio, stock) {
+    document.getElementById('edit-id').value = id;
+    document.getElementById('edit-nombre').value = nombre;
+    document.getElementById('edit-precio').value = precio;
+    document.getElementById('edit-stock').value = stock;
+    document.getElementById('modal-overlay').classList.remove('hidden');
+  }
+
+  function cerrarModal() {
+    document.getElementById('modal-overlay').classList.add('hidden');
+  }
+
+  async function guardarEdicion() {
+    const id = document.getElementById('edit-id').value;
+    const res = await fetch(`${API_BASE}/api/admin/productos/${id}/`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({
+        nombre: document.getElementById('edit-nombre').value,
+        precio: document.getElementById('edit-precio').value,
+        stock: document.getElementById('edit-stock').value,
+      }),
+    });
+    const data = await res.json();
+    cerrarModal();
+    if (!res.ok) { showMsg(data.error || 'Error.', 'err'); return; }
+    showMsg('Producto actualizado.', 'ok');
+    cargarAdminProductos();
+    cargarProductos();
+  }
+
+  async function eliminarProducto(id) {
+    if (!confirm(`Eliminar producto ${id}?`)) return;
+    const res = await fetch(`${API_BASE}/api/admin/productos/${id}/`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    const data = await res.json();
+    showMsg(res.ok ? data.mensaje : data.error, res.ok ? 'ok' : 'err');
+    cargarAdminProductos();
+    cargarProductos();
+  }
+
+  // -------------------------
+  // ADMIN - USUARIOS
+  // -------------------------
+  async function cargarAdminUsuarios() {
+    const res = await fetch(`${API_BASE}/api/admin/usuarios/`, { headers: { 'Authorization': `Bearer ${token}` } });
+    const data = await res.json();
+    renderAdminUsuarios(data.usuarios || []);
+  }
+
+  function renderAdminUsuarios(usuarios) {
+    const tbody = document.querySelector('#admin-tabla-users tbody');
+    tbody.innerHTML = '';
+    usuarios.forEach(u => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${u.username}</td><td>${u.email}</td><td>${u.role}</td>
+        <td><button class="danger" onclick="eliminarUsuario('${u.username}')">Eliminar</button></td>`;
+      tbody.appendChild(tr);
+    });
+  }
+
+  async function crearUsuario(e) {
+    e.preventDefault();
+    const res = await fetch(`${API_BASE}/api/admin/usuarios/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({
+        username: document.getElementById('nu-username').value,
+        email: document.getElementById('nu-email').value,
+        password: document.getElementById('nu-password').value,
+        role: document.getElementById('nu-role').value,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) { showMsg(data.error || 'Error.', 'err'); return; }
+    showMsg('Usuario creado.', 'ok');
+    e.target.reset();
+    cargarAdminUsuarios();
+  }
+
+  async function eliminarUsuario(uname) {
+    if (!confirm(`Eliminar usuario ${uname}?`)) return;
+    const res = await fetch(`${API_BASE}/api/admin/usuarios/${uname}/`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    const data = await res.json();
+    showMsg(res.ok ? data.mensaje : data.error, res.ok ? 'ok' : 'err');
+    cargarAdminUsuarios();
+  }
+
+  // -------------------------
+  // ADMIN - ORDENES
+  // -------------------------
+  async function cargarOrdenes() {
+    const res = await fetch(`${API_BASE}/api/admin/ordenes/`, { headers: { 'Authorization': `Bearer ${token}` } });
+    const data = await res.json();
+    const ordenes = data.ordenes || {};
+    const tbody = document.querySelector('#admin-tabla-orders tbody');
+    const filas = [];
+    Object.entries(ordenes).forEach(([user, compras]) => {
+      compras.forEach(c => {
+        filas.push(`<tr><td>${user}</td><td>${c.nombre}</td><td>${c.quantity}</td><td>$${c.total.toFixed(2)}</td></tr>`);
+      });
+    });
+    tbody.innerHTML = filas.length ? filas.join('') : '<tr><td colspan="4" style="color:#888">Sin ordenes.</td></tr>';
+  }
+
+  // -------------------------
+  // TABS
+  // -------------------------
+  function showTab(id) {
+    ['tab-prod', 'tab-users', 'tab-orders'].forEach(t => {
+      document.getElementById(t).classList.toggle('hidden', t !== id);
+    });
+    document.querySelectorAll('.tab').forEach((btn, i) => {
+      btn.classList.toggle('active', ['tab-prod', 'tab-users', 'tab-orders'][i] === id);
+    });
+    if (id === 'tab-orders') cargarOrdenes();
+    if (id === 'tab-users') cargarAdminUsuarios();
+  }
+
+  // -------------------------
+  // HELPERS
+  // -------------------------
+  function showMsg(text, type) {
+    const el = document.getElementById('msg-global');
+    el.innerHTML = `<div class="msg ${type}">${text}</div>`;
+    setTimeout(() => { el.innerHTML = ''; }, 4000);
+  }
+
+  function clearMsg() { document.getElementById('msg-global').innerHTML = ''; }
+
+  // Login con Enter
+  document.getElementById('inp-pass').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+  document.getElementById('inp-user').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
+  // Carga inicial
+  cargarProductos();
+</script>
+</body>
+</html>
