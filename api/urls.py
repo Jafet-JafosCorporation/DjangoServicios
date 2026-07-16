@@ -10,6 +10,7 @@ from api.views import (
     AdminProductosView,
     ReviewsView,
     AdminReviewDetalleView,
+    asistente_ia, # <--- 1. Agregamos nuestra función aquí
 )
 
 urlpatterns = [
@@ -25,4 +26,7 @@ urlpatterns = [
     path('admin/productos/<int:pk>/', AdminProductosView.as_view()),
     path('productos/<int:pk>/reviews/', ReviewsView.as_view()),
     path('admin/reviews/<str:review_id>/', AdminReviewDetalleView.as_view()),
+
+    # 2. Agregamos la ruta del chatbot al final
+    path('chatbot/', asistente_ia, name='chatbot'),
 ]
