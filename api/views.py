@@ -266,3 +266,44 @@ class AdminReviewDetalleView(APIView):
         if result.deleted_count == 0:
             return Response({'error': 'Review no encontrada.'}, status=404)
         return Response({'mensaje': f'Review {review_id} eliminada.'})
+
+# ---------------------------------------------------------------------------
+# crear la ruta de tu asistente virtual.
+# ---------------------------------------------------------------------------
+import os
+import json
+import google.generativeai as genai
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+
+# Leemos tu llave secreta de forma segura
+genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
+
+@csrf_exempt
+def asistente_ia(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            mensaje_usuario = data.get('mensaje', '')
+
+            if not mensaje_usuario:
+                return JsonResponse({'error': 'Falta enviar el mensaje'}, status=400)
+
+            # Usamos el modelo Flash: es la versión más rápida y ligera de Google
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            
+            # Aquí le damos su "personalidad" al bot para impresionar a tu docente
+            prompt = f"""
+            Eres un asistente virtual experto en ventas para una tienda en línea. 
+            Debes ser amable, profesional y dar respuestas concisas. 
+            El cliente te acaba de decir esto: "{mensaje_usuario}"
+            """
+
+            respuesta = model.generate_content(prompt)
+
+            return JsonResponse({'respuesta': respuesta.text}, status=200)
+
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+            
+    return JsonResponse({'error': 'Método no permitido'}, status=405)
