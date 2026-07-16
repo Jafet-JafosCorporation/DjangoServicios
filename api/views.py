@@ -290,7 +290,7 @@ def asistente_ia(request):
                 return JsonResponse({'error': 'Falta enviar el mensaje'}, status=400)
 
             # Usamos el modelo Flash: es la versión más rápida y ligera de Google
-            model = genai.GenerativeModel('gemini-1.5-flash')
+            model = genai.GenerativeModel('gemini-3.5-flash')
             
             # Aquí le damos su "personalidad" al bot para impresionar a tu docente
             prompt = f"""
