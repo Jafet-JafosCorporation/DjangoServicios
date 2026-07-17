@@ -54,7 +54,7 @@ CORS_ALLOW_ALL_ORIGINS = os.environ.get('CORS_ALLOW_ALL_ORIGINS', 'True') == 'Tr
 # Se usan solo cuando CORS_ALLOW_ALL_ORIGINS es False.
 # Lista separada por comas en la variable de entorno CORS_ALLOWED_ORIGINS.
 # Ubuntu:  export CORS_ALLOWED_ORIGINS="http://192.168.1.50:8080,http://localhost:19006"
-_default_origins = 'http://localhost:19006,http://localhost:8081,http://127.0.0.1:19006,http://127.0.0.1:8081'
+_default_origins = 'http://localhost:19006,http://localhost:8081,http://127.0.0.1:19006,http://127.0.0.1:8081,http://localhost:5173'
 CORS_ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.environ.get('CORS_ALLOWED_ORIGINS', _default_origins).split(',')
