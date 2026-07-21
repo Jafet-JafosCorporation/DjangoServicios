@@ -47,6 +47,10 @@ class LoginView(APIView):
         user_data = users_col.find_one({'username': username})
         if not user_data or not check_password(password, user_data['password']):
             return Response({'error': 'Credenciales incorrectas.'}, status=status.HTTP_401_UNAUTHORIZED)
+            
+        # NUEVO: Bloquear acceso si el usuario está inactivo
+        if user_data.get('is_active') is False:
+            return Response({'error': 'Esta cuenta ha sido inactivada por el administrador.'}, status=status.HTTP_403_FORBIDDEN)
 
         role = user_data['role']
         token = _make_token(username, role)
@@ -111,6 +115,7 @@ class ComprasView(APIView):
             'nombre': product['nombre'],
             'quantity': quantity,
             'total': product['precio'] * quantity,
+            'estado': 'Activa',  # <-- NUEVO CAMPO
         }
         orders_col.insert_one(order)
         order.pop('_id', None)
@@ -121,16 +126,47 @@ class ComprasView(APIView):
 # Admin: ordenes
 # ---------------------------------------------------------------------------
 
+def _serialize_order(o):
+    o['id'] = str(o.pop('_id'))
+    return o
+
 class AdminOrdenesView(APIView):
     permission_classes = [IsAdmin]
 
     def get(self, _request):
-        all_orders = list(orders_col.find({}, PROJECTION))
+        # Quitamos la PROJECTION para que Mongo sí nos devuelva el _id
+        all_orders = list(orders_col.find({}))
         grouped = {}
         for o in all_orders:
+            o = _serialize_order(o)
             grouped.setdefault(o['username'], []).append({k: v for k, v in o.items() if k != 'username'})
         return Response({'ordenes': grouped})
 
+class AdminOrdenDetalleView(APIView):
+    permission_classes = [IsAdmin]
+
+    def delete(self, _request, orden_id):
+        try:
+            # 1. Buscamos la orden
+            orden = orders_col.find_one({'_id': ObjectId(orden_id)})
+            if not orden:
+                return Response({'error': 'Orden no encontrada.'}, status=404)
+            
+            if orden.get('estado') == 'Cancelada':
+                return Response({'error': 'Esta orden ya fue cancelada previamente.'}, status=400)
+
+            # 2. Actualizamos el estado a 'Cancelada' en lugar de borrarla
+            orders_col.update_one({'_id': ObjectId(orden_id)}, {'$set': {'estado': 'Cancelada'}})
+
+            # 3. ¡Magia! Devolvemos el stock al producto original
+            products_col.update_one(
+                {'id': orden['product_id']}, 
+                {'$inc': {'stock': orden['quantity']}}
+            )
+
+            return Response({'mensaje': 'Orden cancelada y stock devuelto al inventario.'})
+        except Exception:
+            return Response({'error': 'ID de orden inválido.'}, status=400)
 
 # ---------------------------------------------------------------------------
 # Admin: productos
@@ -203,11 +239,14 @@ class AdminUsuarioDetalleView(APIView):
 
     def delete(self, request, username):
         if username == request.user.username:
-            return Response({'error': 'No puedes eliminar tu propia cuenta.'}, status=400)
-        result = users_col.delete_one({'username': username})
-        if result.deleted_count == 0:
+            return Response({'error': 'No puedes inactivar tu propia cuenta.'}, status=400)
+            
+        # NUEVO: En lugar de borrar, actualizamos is_active a False
+        result = users_col.update_one({'username': username}, {'$set': {'is_active': False}})
+        
+        if result.matched_count == 0:
             return Response({'error': 'Usuario no encontrado.'}, status=404)
-        return Response({'mensaje': f'Usuario {username} eliminado.'})
+        return Response({'mensaje': f'Usuario {username} inactivado correctamente.'})
 
 
 # ---------------------------------------------------------------------------
