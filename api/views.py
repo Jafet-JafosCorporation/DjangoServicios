@@ -1,15 +1,20 @@
-from datetime import datetime, timezone
+import os
+import json
+from datetime import datetime, timezone, date
+from bson import ObjectId
 
 from django.conf import settings
 from django.shortcuts import render
 from django.contrib.auth.hashers import check_password, make_password
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 import jwt
+import google.generativeai as genai
 
-from datetime import date
-from bson import ObjectId
 from api.db import users as users_col, products as products_col, orders as orders_col, reviews as reviews_col
 from api.permissions import IsAdmin, IsUsuario
 
@@ -48,8 +53,8 @@ class LoginView(APIView):
         if not user_data or not check_password(password, user_data['password']):
             return Response({'error': 'Credenciales incorrectas.'}, status=status.HTTP_401_UNAUTHORIZED)
             
-        # NUEVO: Bloquear acceso si el usuario está inactivo
-        if user_data.get('is_active') is False:
+        # BLINDAJE: Bloquea si is_active es False O si el estado dice 'Inactivo'
+        if user_data.get('is_active') is False or user_data.get('estado') == 'Inactivo':
             return Response({'error': 'Esta cuenta ha sido inactivada por el administrador.'}, status=status.HTTP_403_FORBIDDEN)
 
         role = user_data['role']
@@ -78,7 +83,7 @@ class LoginView(APIView):
 
 
 # ---------------------------------------------------------------------------
-# Productos (acceso publico)
+# Productos (acceso público)
 # ---------------------------------------------------------------------------
 
 class ProductosView(APIView):
@@ -115,7 +120,7 @@ class ComprasView(APIView):
             'nombre': product['nombre'],
             'quantity': quantity,
             'total': product['precio'] * quantity,
-            'estado': 'Activa',  # <-- NUEVO CAMPO
+            'estado': 'Activa',  # <-- Campo para filtrado de órdenes
         }
         orders_col.insert_one(order)
         order.pop('_id', None)
@@ -123,7 +128,7 @@ class ComprasView(APIView):
 
 
 # ---------------------------------------------------------------------------
-# Admin: ordenes
+# Admin: órdenes y cancelación con devolución de stock
 # ---------------------------------------------------------------------------
 
 def _serialize_order(o):
@@ -134,7 +139,6 @@ class AdminOrdenesView(APIView):
     permission_classes = [IsAdmin]
 
     def get(self, _request):
-        # Quitamos la PROJECTION para que Mongo sí nos devuelva el _id
         all_orders = list(orders_col.find({}))
         grouped = {}
         for o in all_orders:
@@ -147,7 +151,6 @@ class AdminOrdenDetalleView(APIView):
 
     def delete(self, _request, orden_id):
         try:
-            # 1. Buscamos la orden
             orden = orders_col.find_one({'_id': ObjectId(orden_id)})
             if not orden:
                 return Response({'error': 'Orden no encontrada.'}, status=404)
@@ -155,10 +158,10 @@ class AdminOrdenDetalleView(APIView):
             if orden.get('estado') == 'Cancelada':
                 return Response({'error': 'Esta orden ya fue cancelada previamente.'}, status=400)
 
-            # 2. Actualizamos el estado a 'Cancelada' en lugar de borrarla
+            # 1. Marcamos como cancelada en lugar de borrar el historial
             orders_col.update_one({'_id': ObjectId(orden_id)}, {'$set': {'estado': 'Cancelada'}})
 
-            # 3. ¡Magia! Devolvemos el stock al producto original
+            # 2. Devolvemos los productos al stock disponible del inventario
             products_col.update_one(
                 {'id': orden['product_id']}, 
                 {'$inc': {'stock': orden['quantity']}}
@@ -167,6 +170,7 @@ class AdminOrdenDetalleView(APIView):
             return Response({'mensaje': 'Orden cancelada y stock devuelto al inventario.'})
         except Exception:
             return Response({'error': 'ID de orden inválido.'}, status=400)
+
 
 # ---------------------------------------------------------------------------
 # Admin: productos
@@ -208,7 +212,7 @@ class AdminProductosView(APIView):
 
 
 # ---------------------------------------------------------------------------
-# Admin: usuarios
+# Admin: usuarios (Estandarización de creación, inactivación y reactivación)
 # ---------------------------------------------------------------------------
 
 class AdminUsuariosView(APIView):
@@ -224,11 +228,15 @@ class AdminUsuariosView(APIView):
             return Response({'error': 'El username es requerido.'}, status=400)
         if users_col.find_one({'username': username}):
             return Response({'error': 'El usuario ya existe.'}, status=400)
+        
+        # Estandarizado para que todos nazcan con las banderas correctas
         new_user = {
             'username': username,
             'password': make_password(request.data.get('password', '')),
             'role': request.data.get('role', 'usuario'),
             'email': request.data.get('email', ''),
+            'estado': 'Activo',
+            'is_active': True,
         }
         users_col.insert_one(new_user)
         return Response({'mensaje': 'Usuario creado.', 'usuario': {'username': username, 'role': new_user['role']}}, status=201)
@@ -241,16 +249,30 @@ class AdminUsuarioDetalleView(APIView):
         if username == request.user.username:
             return Response({'error': 'No puedes inactivar tu propia cuenta.'}, status=400)
             
-        # NUEVO: En lugar de borrar, actualizamos is_active a False
-        result = users_col.update_one({'username': username}, {'$set': {'is_active': False}})
-        
+        # Sincronizamos las dos variables al inactivar
+        result = users_col.update_one(
+            {'username': username}, 
+            {'$set': {'estado': 'Inactivo', 'is_active': False}}
+        )
         if result.matched_count == 0:
             return Response({'error': 'Usuario no encontrado.'}, status=404)
         return Response({'mensaje': f'Usuario {username} inactivado correctamente.'})
 
+    def put(self, request, username):
+        # Sincronizamos las dos variables al reactivar (o modificar estado)
+        data = request.data
+        if 'estado' in data:
+            es_activo = (data['estado'] == 'Activo')
+            users_col.update_one(
+                {'username': username}, 
+                {'$set': {'estado': data['estado'], 'is_active': es_activo}}
+            )
+            return Response({'mensaje': f'Estado actualizado a {data["estado"]}.'})
+        return Response({'error': 'No se envió el parámetro estado.'}, status=400)
+
 
 # ---------------------------------------------------------------------------
-# Reviews (GET publico, POST requiere usuario, DELETE requiere admin)
+# Reviews (GET público, POST requiere usuario, DELETE requiere admin)
 # ---------------------------------------------------------------------------
 
 def _serialize_review(r):
@@ -259,7 +281,6 @@ def _serialize_review(r):
 
 
 class ReviewsView(APIView):
-
     def get_permissions(self):
         if self.request.method == 'POST':
             return [IsUsuario()]
@@ -306,16 +327,11 @@ class AdminReviewDetalleView(APIView):
             return Response({'error': 'Review no encontrada.'}, status=404)
         return Response({'mensaje': f'Review {review_id} eliminada.'})
 
-# ---------------------------------------------------------------------------
-# crear la ruta de tu asistente virtual.
-# ---------------------------------------------------------------------------
-import os
-import json
-import google.generativeai as genai
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
 
-# Leemos tu llave secreta de forma segura
+# ---------------------------------------------------------------------------
+# Asistente IA (Google Gemini)
+# ---------------------------------------------------------------------------
+
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
 
 @csrf_exempt
@@ -328,20 +344,15 @@ def asistente_ia(request):
             if not mensaje_usuario:
                 return JsonResponse({'error': 'Falta enviar el mensaje'}, status=400)
 
-            # Usamos el modelo Flash: es la versión más rápida y ligera de Google
             model = genai.GenerativeModel('gemini-3.5-flash')
-            
-            # Aquí le damos su "personalidad" al bot para impresionar a tu docente
             prompt = f"""
             Eres un asistente virtual experto en ventas para una tienda en línea. 
             Debes ser amable, profesional y dar respuestas concisas. 
             El cliente te acaba de decir esto: "{mensaje_usuario}"
             """
-
             respuesta = model.generate_content(prompt)
 
             return JsonResponse({'respuesta': respuesta.text}, status=200)
-
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=500)
             
