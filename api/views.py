@@ -146,36 +146,57 @@ class AdminOrdenesView(APIView):
             grouped.setdefault(o['username'], []).append({k: v for k, v in o.items() if k != 'username'})
         return Response({'ordenes': grouped})
 
+# --- 2. GESTIÓN AVANZADA DE ESTADOS DE ÓRDENES ---
 class AdminOrdenDetalleView(APIView):
     permission_classes = [IsAdmin]
 
-    def delete(self, _request, orden_id):
+    def put(self, request, orden_id):
+        """Permite al administrador cambiar el estado de la orden (Ej. de Pagada a Enviada)"""
         try:
+            nuevo_estado = request.data.get('estado')
+            if not nuevo_estado:
+                return Response({'error': 'Falta enviar el nuevo estado.'}, status=400)
+
             orden = orders_col.find_one({'_id': ObjectId(orden_id)})
             if not orden:
                 return Response({'error': 'Orden no encontrada.'}, status=404)
-            
-            if orden.get('estado') == 'Cancelada':
-                return Response({'error': 'Esta orden ya fue cancelada previamente.'}, status=400)
 
-            # 1. Marcamos como cancelada en lugar de borrar el historial
-            orders_col.update_one({'_id': ObjectId(orden_id)}, {'$set': {'estado': 'Cancelada'}})
+            # Si el nuevo estado es Cancelada y antes no lo era, regresamos el stock
+            if nuevo_estado == 'Cancelada' and orden.get('estado') != 'Cancelada':
+                products_col.update_one(
+                    {'id': orden['product_id']}, 
+                    {'$inc': {'stock': orden['quantity']}}
+                )
+            # Si la orden estaba cancelada y la reactivamos, restamos el stock nuevamente
+            elif orden.get('estado') == 'Cancelada' and nuevo_estado != 'Cancelada':
+                products_col.update_one(
+                    {'id': orden['product_id']}, 
+                    {'$inc': {'stock': -orden['quantity']}}
+                )
 
-            # 2. Devolvemos los productos al stock disponible del inventario
-            products_col.update_one(
-                {'id': orden['product_id']}, 
-                {'$inc': {'stock': orden['quantity']}}
-            )
-
-            return Response({'mensaje': 'Orden cancelada y stock devuelto al inventario.'})
+            orders_col.update_one({'_id': ObjectId(orden_id)}, {'$set': {'estado': nuevo_estado}})
+            return Response({'mensaje': f'Estado de orden actualizado a {nuevo_estado}.'})
         except Exception:
             return Response({'error': 'ID de orden inválido.'}, status=400)
+
+    def delete(self, _request, orden_id):
+        # Mantenemos tu método delete por si acaso se sigue usando como atajo rápido
+        try:
+            orden = orders_col.find_one({'_id': ObjectId(orden_id)})
+            if not orden: return Response({'error': 'Orden no encontrada.'}, status=404)
+            if orden.get('estado') == 'Cancelada': return Response({'error': 'Ya estaba cancelada.'}, status=400)
+
+            orders_col.update_one({'_id': ObjectId(orden_id)}, {'$set': {'estado': 'Cancelada'}})
+            products_col.update_one({'id': orden['product_id']}, {'$inc': {'stock': orden['quantity']}})
+            return Response({'mensaje': 'Orden cancelada y stock devuelto.'})
+        except Exception: return Response({'error': 'ID inválido.'}, status=400)
 
 
 # ---------------------------------------------------------------------------
 # Admin: productos
 # ---------------------------------------------------------------------------
 
+# --- 1. ACTUALIZAR CREACIÓN Y EDICIÓN DE PRODUCTOS ---
 class AdminProductosView(APIView):
     permission_classes = [IsAdmin]
 
@@ -184,9 +205,14 @@ class AdminProductosView(APIView):
         new_id = (last['id'] + 1) if last else 1
         product = {
             'id': new_id,
-            'nombre': request.data.get('nombre', ''),
+            'nombre': request.data.get('nombre', '').strip(),
             'precio': float(request.data.get('precio', 0)),
             'stock': int(request.data.get('stock', 0)),
+            # NUEVOS CAMPOS PROFESIONALES:
+            'categoria': request.data.get('categoria', 'General').strip(),
+            'marca': request.data.get('marca', 'Genérica').strip(),
+            'imagen': request.data.get('imagen', 'https://via.placeholder.com/150').strip(),
+            'descripcion': request.data.get('descripcion', 'Sin descripción detallada.').strip(),
         }
         products_col.insert_one(product)
         product.pop('_id', None)
@@ -197,9 +223,13 @@ class AdminProductosView(APIView):
         if not product:
             return Response({'error': 'Producto no encontrado.'}, status=404)
         updates = {
-            'nombre': request.data.get('nombre', product['nombre']),
+            'nombre': request.data.get('nombre', product['nombre']).strip(),
             'precio': float(request.data.get('precio', product['precio'])),
             'stock': int(request.data.get('stock', product['stock'])),
+            'categoria': request.data.get('categoria', product.get('categoria', 'General')).strip(),
+            'marca': request.data.get('marca', product.get('marca', 'Genérica')).strip(),
+            'imagen': request.data.get('imagen', product.get('imagen', 'https://via.placeholder.com/150')).strip(),
+            'descripcion': request.data.get('descripcion', product.get('descripcion', '')).strip(),
         }
         products_col.update_one({'id': pk}, {'$set': updates})
         return Response({'mensaje': 'Producto actualizado.', 'producto': {**product, **updates}})
