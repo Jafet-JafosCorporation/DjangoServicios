@@ -15,7 +15,7 @@ from rest_framework import status
 import jwt
 import google.generativeai as genai
 
-from api.db import users as users_col, products as products_col, orders as orders_col, reviews as reviews_col
+from api.db import users as users_col, products as products_col, orders as orders_col, reviews as reviews_col, addresses as addresses_col
 from api.permissions import IsAdmin, IsUsuario
 
 PROJECTION = {'_id': 0}
@@ -416,6 +416,52 @@ class AdminReviewDetalleView(APIView):
         if result.deleted_count == 0:
             return Response({'error': 'Review no encontrada.'}, status=404)
         return Response({'mensaje': f'Review {review_id} eliminada.'})
+
+# ---------------------------------------------------------------------------
+# Direcciones de Envío (Requiere Usuario)
+# ---------------------------------------------------------------------------
+class DireccionesView(APIView):
+    permission_classes = [IsUsuario]
+
+    def get(self, request):
+        direcciones = list(addresses_col.find({'username': request.user.username}, PROJECTION))
+        return Response({'direcciones': direcciones})
+
+    def post(self, request):
+        nombre = request.data.get('nombreDestinatario', '').strip()
+        calle = request.data.get('calleNumero', '').strip()
+        ciudad = request.data.get('ciudad', '').strip()
+        cp = request.data.get('codigoPostal', '').strip()
+
+        if not nombre or not calle or not ciudad or not cp:
+            return Response({'error': 'Falta información obligatoria del domicilio.'}, status=400)
+
+        # Si el cliente no tenía direcciones previas, esta primera nace como predeterminada
+        conteo = addresses_col.count_documents({'username': request.user.username})
+        
+        last = addresses_col.find_one(sort=[('id', -1)])
+        # CORREGIDO: Usamos date.today().toordinal() en minúscula para evitar el error de Pylance
+        new_id = str(int(last['id']) + 1) if (last and last.get('id', '').isdigit()) else str(date.today().toordinal() + conteo + 1)
+
+        nueva_dir = {
+            'id': new_id,
+            'username': request.user.username,
+            'nombreDestinatario': nombre,
+            'calleNumero': calle,
+            'colonia': request.data.get('colonia', 'General').strip(),
+            'ciudad': ciudad,
+            'codigoPostal': cp,
+            'esPredeterminada': conteo == 0
+        }
+        addresses_col.insert_one(nueva_dir)
+        nueva_dir.pop('_id', None)
+        return Response({'mensaje': 'Domicilio guardado.', 'direccion': nueva_dir}, status=201)
+
+    def delete(self, request, pk):
+        result = addresses_col.delete_one({'id': str(pk), 'username': request.user.username})
+        if result.deleted_count == 0:
+            return Response({'error': 'Dirección no encontrada.'}, status=404)
+        return Response({'mensaje': 'Domicilio eliminado.'})
 
 
 # ---------------------------------------------------------------------------
