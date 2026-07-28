@@ -513,9 +513,21 @@ def asistente_ia(request):
             
             El cliente te acaba de escribir este mensaje: "{mensaje_usuario}"
             """
-            respuesta = model.generate_content(prompt)
-
-            return JsonResponse({'respuesta': respuesta.text}, status=200)
+            try:
+                respuesta = model.generate_content(prompt)
+                return JsonResponse({'respuesta': respuesta.text}, status=200)
+            except Exception as e:
+                error_str = str(e)
+                # Si algún día se llega a saturar la cuota (Error 429 / Quota):
+                if '429' in error_str or 'Quota' in error_str or 'rate' in error_str.lower():
+                    return JsonResponse({
+                        'respuesta': '¡Vaya! En este momento hay muchos clientes consultando nuestro catálogo al mismo tiempo. Por favor, dame unos segundos para procesar todo y vuelve a preguntarme. 🤖⏳'
+                    }, status=200) # <-- Al devolver status 200, la app lo muestra en el chat y NO saca error rojo
+                
+                # Para cualquier otra intermitencia:
+                return JsonResponse({
+                    'respuesta': 'Una disculpa, tuve una breve intermitencia al consultar el inventario. ¿Podrías repetirme tu pregunta?'
+                }, status=200)
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=500)
             
