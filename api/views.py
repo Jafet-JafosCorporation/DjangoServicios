@@ -130,6 +130,7 @@ class RegistroView(APIView):
             'rol': 'usuario'
         }, status=201)
 
+
 # ---------------------------------------------------------------------------
 # Productos (acceso público)
 # ---------------------------------------------------------------------------
@@ -193,6 +194,7 @@ class AdminOrdenesView(APIView):
             o = _serialize_order(o)
             grouped.setdefault(o['username'], []).append({k: v for k, v in o.items() if k != 'username'})
         return Response({'ordenes': grouped})
+
 
 # --- 2. GESTIÓN AVANZADA DE ESTADOS DE ÓRDENES ---
 class AdminOrdenDetalleView(APIView):
@@ -382,15 +384,25 @@ class ReviewsView(APIView):
         if not comment:
             return Response({'error': 'El comentario no puede estar vacio.'}, status=400)
 
-        review = {
+        review_data = {
             'product_id': pk,
             'username': request.user.username,
             'rating': int(rating),
             'comment': comment,
             'fecha': date.today().isoformat(),
         }
-        reviews_col.insert_one(review)
-        return Response({'mensaje': 'Review agregada.', 'review': _serialize_review(review)}, status=201)
+        
+        # ACTUALIZACIÓN ESTILO AMAZON/MERCADO LIBRE (UPSERT):
+        # Si ya existe una opinión de este usuario para este producto, actualízala en lugar de duplicar.
+        reviews_col.update_one(
+            {'product_id': pk, 'username': request.user.username},
+            {'$set': review_data},
+            upsert=True
+        )
+        
+        # Obtenemos el documento oficial guardado para devolverlo serializado
+        saved_review = reviews_col.find_one({'product_id': pk, 'username': request.user.username})
+        return Response({'mensaje': 'Reseña guardada o actualizada exitosamente.', 'review': _serialize_review(saved_review)}, status=200)
 
 
 class AdminReviewDetalleView(APIView):
