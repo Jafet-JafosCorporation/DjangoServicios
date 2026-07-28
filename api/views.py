@@ -46,10 +46,19 @@ def _make_token(username: str, role: str) -> str:
 
 class LoginView(APIView):
     def post(self, request):
-        username = request.data.get('username', '').strip()
+        # Aceptamos tanto la variable 'username' como 'correo' que viene del celular
+        login_id = request.data.get('username', '') or request.data.get('correo', '')
+        login_id = login_id.strip()
         password = request.data.get('password', '').strip()
 
-        user_data = users_col.find_one({'username': username})
+        # BÚSQUEDA DUAL (OPCIÓN B): Busca si coincide con el username O con el email
+        user_data = users_col.find_one({
+            '$or': [
+                {'username': login_id},
+                {'email': login_id}
+            ]
+        })
+
         if not user_data or not check_password(password, user_data['password']):
             return Response({'error': 'Credenciales incorrectas.'}, status=status.HTTP_401_UNAUTHORIZED)
             
@@ -58,17 +67,18 @@ class LoginView(APIView):
             return Response({'error': 'Esta cuenta ha sido inactivada por el administrador.'}, status=status.HTTP_403_FORBIDDEN)
 
         role = user_data['role']
-        token = _make_token(username, role)
+        # Usamos el username real del usuario para generar su token oficial
+        token = _make_token(user_data['username'], role)
 
         if role == 'admin':
             welcome = {
-                'mensaje': f'Bienvenido, administrador {username}.',
+                'mensaje': f'Bienvenido, administrador {user_data["username"]}.',
                 'panel': 'Tienes acceso al panel de administracion.',
                 'acciones_disponibles': ['GET /api/productos/', 'POST /api/admin/productos/', 'GET /api/admin/usuarios/', 'GET /api/admin/ordenes/'],
             }
         elif role == 'usuario':
             welcome = {
-                'mensaje': f'Bienvenido, {username}.',
+                'mensaje': f'Bienvenido, {user_data["username"]}.',
                 'panel': 'Puedes explorar productos y realizar compras.',
                 'acciones_disponibles': ['GET /api/productos/', 'POST /api/compras/', 'GET /api/mis-compras/'],
             }
@@ -79,8 +89,46 @@ class LoginView(APIView):
                 'acciones_disponibles': ['GET /api/productos/'],
             }
 
-        return Response({'access_token': token, 'token_type': 'Bearer', 'rol': role, **welcome})
+        return Response({'access_token': token, 'token_type': 'Bearer', 'rol': role, 'nombre': user_data['username'], **welcome})
 
+
+class RegistroView(APIView):
+    # Sin permission_classes para que sea público (cualquiera puede registrarse)
+    def post(self, request):
+        # Tomamos los datos del formulario móvil
+        nombre = request.data.get('nombre', '').strip()
+        email = request.data.get('correo', '') or request.data.get('email', '')
+        email = email.strip()
+        password = request.data.get('password', '').strip()
+
+        if not email or not password:
+            return Response({'error': 'Correo y contraseña son requeridos.'}, status=400)
+            
+        # Validamos que no exista ni el correo ni el nombre de usuario
+        if users_col.find_one({'$or': [{'username': nombre}, {'email': email}]}):
+            return Response({'error': 'Este correo o nombre de usuario ya está registrado.'}, status=400)
+        
+        # Si no puso nombre, usamos la primera parte de su correo
+        username_final = nombre if nombre else email.split('@')[0]
+
+        new_user = {
+            'username': username_final,
+            'password': make_password(password),
+            'role': 'usuario', # Por defecto todos nacen como clientes normales
+            'email': email,
+            'estado': 'Activo',
+            'is_active': True,
+        }
+        users_col.insert_one(new_user)
+        
+        # Le generamos un token para que inicie sesión automáticamente al registrarse
+        token = _make_token(username_final, 'usuario')
+        return Response({
+            'mensaje': 'Cuenta creada con éxito.', 
+            'access_token': token, 
+            'nombre': username_final,
+            'rol': 'usuario'
+        }, status=201)
 
 # ---------------------------------------------------------------------------
 # Productos (acceso público)
