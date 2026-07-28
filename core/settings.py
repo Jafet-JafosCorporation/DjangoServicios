@@ -46,6 +46,9 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 STATIC_URL = 'static/'
 
+# AGREGAR ESTA LÍNEA PARA DOCKER Y GOOGLE CLOUD RUN:
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+
 # CORS
 # Controlado por variable de entorno para poder activarlo/desactivarlo sin tocar el codigo.
 # PowerShell:  $env:CORS_ALLOW_ALL_ORIGINS = "False"   (luego reiniciar runserver)
