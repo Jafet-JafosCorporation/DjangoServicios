@@ -434,11 +434,38 @@ def asistente_ia(request):
             if not mensaje_usuario:
                 return JsonResponse({'error': 'Falta enviar el mensaje'}, status=400)
 
+            # 1. CONSULTAMOS EL CATÁLOGO EN VIVO DESDE MONGODB EN UBUNTU
+            # Traemos solo los campos necesarios para no saturar a la IA
+            productos_db = list(products_col.find({}, {'_id': 0, 'nombre': 1, 'precio': 1, 'stock': 1, 'categoria': 1, 'marca': 1}))
+            
+            # 2. FORMATEAMOS EL INVENTARIO EN UN TEXTO LEGIBLE PARA EL MODELO
+            catalogo_texto = ""
+            for p in productos_db:
+                nombre = p.get('nombre', 'Producto')
+                marca = p.get('marca', 'Genérica')
+                precio = p.get('precio', 0)
+                stock = p.get('stock', 0)
+                cat = p.get('categoria', 'General')
+                catalogo_texto += f"- {nombre} (Marca: {marca}) | Precio: ${precio} MXN | Stock disponible: {stock} unidades | Categoría: {cat}\n"
+
             model = genai.GenerativeModel('gemini-3.5-flash')
+            
+            # 3. INYECTAMOS EL CATÁLOGO Y REGLAS DE NEGOCIO EN EL PROMPT DEL SISTEMA
             prompt = f"""
-            Eres un asistente virtual experto en ventas para una tienda en línea. 
-            Debes ser amable, profesional y dar respuestas concisas. 
-            El cliente te acaba de decir esto: "{mensaje_usuario}"
+            Eres el asistente virtual inteligente de ventas y soporte técnico de la tienda 'JafosTechnologies Store'.
+            Debes ser amable, profesional, perspicaz y dar respuestas concisas (máximo 2 o 3 párrafos cortos).
+            
+            AQUÍ TIENES EL INVENTARIO Y CATÁLOGO EN TIEMPO REAL DE NUESTRA TIENDA:
+            {catalogo_texto}
+            
+            REGLAS ESTRICTAS DE NEGOCIO:
+            1. Solo recomienda, vende o menciona productos que aparezcan en la lista anterior.
+            2. Si el cliente pregunta por el stock de un producto y su stock dice '0 unidades', avísale amablemente que por el momento está agotado.
+            3. Si el cliente pregunta por un hardware o marca que no está en la lista, dile con educación que no lo manejamos por ahora y ofrécele una alternativa similar de nuestro inventario.
+            4. Menciona siempre los precios exactos en MXN cuando hables de los productos.
+            5. Si pregunta sobre envíos, recuerda que en pedidos mayores a $1,000 MXN el envío es ¡completamente GRATIS!
+            
+            El cliente te acaba de escribir este mensaje: "{mensaje_usuario}"
             """
             respuesta = model.generate_content(prompt)
 
