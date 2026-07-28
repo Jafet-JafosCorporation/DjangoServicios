@@ -28,3 +28,6 @@ users    = _LazyCollection('users')
 products = _LazyCollection('products')
 orders   = _LazyCollection('orders')
 reviews  = _LazyCollection('reviews')
+
+# <-- AGREGAMOS NUESTRA NUEVA COLECCIÓN CON EL MISMO PATRÓN PEREZOSO -->
+addresses = _LazyCollection('addresses')
