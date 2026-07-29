@@ -46,12 +46,10 @@ def _make_token(username: str, role: str) -> str:
 
 class LoginView(APIView):
     def post(self, request):
-        # Aceptamos tanto la variable 'username' como 'correo' que viene del celular
         login_id = request.data.get('username', '') or request.data.get('correo', '')
         login_id = login_id.strip()
         password = request.data.get('password', '').strip()
 
-        # BÚSQUEDA DUAL (OPCIÓN B): Busca si coincide con el username O con el email
         user_data = users_col.find_one({
             '$or': [
                 {'username': login_id},
@@ -62,12 +60,10 @@ class LoginView(APIView):
         if not user_data or not check_password(password, user_data['password']):
             return Response({'error': 'Credenciales incorrectas.'}, status=status.HTTP_401_UNAUTHORIZED)
             
-        # BLINDAJE: Bloquea si is_active es False O si el estado dice 'Inactivo'
         if user_data.get('is_active') is False or user_data.get('estado') == 'Inactivo':
             return Response({'error': 'Esta cuenta ha sido inactivada por el administrador.'}, status=status.HTTP_403_FORBIDDEN)
 
         role = user_data['role']
-        # Usamos el username real del usuario para generar su token oficial
         token = _make_token(user_data['username'], role)
 
         if role == 'admin':
@@ -93,9 +89,7 @@ class LoginView(APIView):
 
 
 class RegistroView(APIView):
-    # Sin permission_classes para que sea público (cualquiera puede registrarse)
     def post(self, request):
-        # Tomamos los datos del formulario móvil
         nombre = request.data.get('nombre', '').strip()
         email = request.data.get('correo', '') or request.data.get('email', '')
         email = email.strip()
@@ -104,24 +98,21 @@ class RegistroView(APIView):
         if not email or not password:
             return Response({'error': 'Correo y contraseña son requeridos.'}, status=400)
             
-        # Validamos que no exista ni el correo ni el nombre de usuario
         if users_col.find_one({'$or': [{'username': nombre}, {'email': email}]}):
             return Response({'error': 'Este correo o nombre de usuario ya está registrado.'}, status=400)
         
-        # Si no puso nombre, usamos la primera parte de su correo
         username_final = nombre if nombre else email.split('@')[0]
 
         new_user = {
             'username': username_final,
             'password': make_password(password),
-            'role': 'usuario', # Por defecto todos nacen como clientes normales
+            'role': 'usuario',
             'email': email,
             'estado': 'Activo',
             'is_active': True,
         }
         users_col.insert_one(new_user)
         
-        # Le generamos un token para que inicie sesión automáticamente al registrarse
         token = _make_token(username_final, 'usuario')
         return Response({
             'mensaje': 'Cuenta creada con éxito.', 
@@ -155,7 +146,6 @@ class ComprasView(APIView):
     def post(self, request):
         product_id = request.data.get('product_id')
         quantity = int(request.data.get('quantity', 1))
-        # 1. RECIBIR MÉTODO DE PAGO (Por defecto Efectivo si no lo envían)
         metodo_pago = request.data.get('metodo_pago', 'Efectivo')
 
         product = products_col.find_one({'id': product_id}, PROJECTION)
@@ -166,8 +156,8 @@ class ComprasView(APIView):
 
         products_col.update_one({'id': product_id}, {'$inc': {'stock': -quantity}})
         
-        # 2. DEFINIR EL ESTADO INICIAL
-        estado_inicial = "Pagada" if metodo_pago == "Tarjeta" else "Pendiente"
+        # SOLUCIÓN: Usamos .lower() para evitar errores si el frontend envía "tarjeta" o "Tarjeta"
+        estado_inicial = "Pagada" if metodo_pago.lower() == "tarjeta" else "Pendiente"
         
         order = {
             'username': request.user.username,
@@ -175,12 +165,13 @@ class ComprasView(APIView):
             'nombre': product['nombre'],
             'quantity': quantity,
             'total': product['precio'] * quantity,
-            'metodo_pago': metodo_pago, # Guardamos cómo pagó
-            'estado': estado_inicial,   # "Pagada" o "Pendiente"
+            'metodo_pago': metodo_pago,
+            'estado': estado_inicial,
         }
         orders_col.insert_one(order)
         order.pop('_id', None)
         return Response({'mensaje': 'Compra realizada.', 'orden': order}, status=201)
+
 
 # ---------------------------------------------------------------------------
 # Admin: órdenes y cancelación con devolución de stock
@@ -201,13 +192,10 @@ class AdminOrdenesView(APIView):
             grouped.setdefault(o['username'], []).append({k: v for k, v in o.items() if k != 'username'})
         return Response({'ordenes': grouped})
 
-
-# --- 2. GESTIÓN AVANZADA DE ESTADOS DE ÓRDENES ---
 class AdminOrdenDetalleView(APIView):
     permission_classes = [IsAdmin]
 
     def put(self, request, orden_id):
-        """Permite al administrador cambiar el estado de la orden (Ej. de Pagada a Enviada)"""
         try:
             nuevo_estado = request.data.get('estado')
             if not nuevo_estado:
@@ -217,13 +205,11 @@ class AdminOrdenDetalleView(APIView):
             if not orden:
                 return Response({'error': 'Orden no encontrada.'}, status=404)
 
-            # Si el nuevo estado es Cancelada y antes no lo era, regresamos el stock
             if nuevo_estado == 'Cancelada' and orden.get('estado') != 'Cancelada':
                 products_col.update_one(
                     {'id': orden['product_id']}, 
                     {'$inc': {'stock': orden['quantity']}}
                 )
-            # Si la orden estaba cancelada y la reactivamos, restamos el stock nuevamente
             elif orden.get('estado') == 'Cancelada' and nuevo_estado != 'Cancelada':
                 products_col.update_one(
                     {'id': orden['product_id']}, 
@@ -236,7 +222,6 @@ class AdminOrdenDetalleView(APIView):
             return Response({'error': 'ID de orden inválido.'}, status=400)
 
     def delete(self, _request, orden_id):
-        # Mantenemos tu método delete por si acaso se sigue usando como atajo rápido
         try:
             orden = orders_col.find_one({'_id': ObjectId(orden_id)})
             if not orden: return Response({'error': 'Orden no encontrada.'}, status=404)
@@ -252,7 +237,6 @@ class AdminOrdenDetalleView(APIView):
 # Admin: productos
 # ---------------------------------------------------------------------------
 
-# --- 1. ACTUALIZAR CREACIÓN Y EDICIÓN DE PRODUCTOS ---
 class AdminProductosView(APIView):
     permission_classes = [IsAdmin]
 
@@ -264,7 +248,6 @@ class AdminProductosView(APIView):
             'nombre': request.data.get('nombre', '').strip(),
             'precio': float(request.data.get('precio', 0)),
             'stock': int(request.data.get('stock', 0)),
-            # NUEVOS CAMPOS PROFESIONALES:
             'categoria': request.data.get('categoria', 'General').strip(),
             'marca': request.data.get('marca', 'Genérica').strip(),
             'imagen': request.data.get('imagen', 'https://via.placeholder.com/150').strip(),
@@ -298,7 +281,7 @@ class AdminProductosView(APIView):
 
 
 # ---------------------------------------------------------------------------
-# Admin: usuarios (Estandarización de creación, inactivación y reactivación)
+# Admin: usuarios 
 # ---------------------------------------------------------------------------
 
 class AdminUsuariosView(APIView):
@@ -315,7 +298,6 @@ class AdminUsuariosView(APIView):
         if users_col.find_one({'username': username}):
             return Response({'error': 'El usuario ya existe.'}, status=400)
         
-        # Estandarizado para que todos nazcan con las banderas correctas
         new_user = {
             'username': username,
             'password': make_password(request.data.get('password', '')),
@@ -335,7 +317,6 @@ class AdminUsuarioDetalleView(APIView):
         if username == request.user.username:
             return Response({'error': 'No puedes inactivar tu propia cuenta.'}, status=400)
             
-        # Sincronizamos las dos variables al inactivar
         result = users_col.update_one(
             {'username': username}, 
             {'$set': {'estado': 'Inactivo', 'is_active': False}}
@@ -345,7 +326,6 @@ class AdminUsuarioDetalleView(APIView):
         return Response({'mensaje': f'Usuario {username} inactivado correctamente.'})
 
     def put(self, request, username):
-        # Sincronizamos las dos variables al reactivar (o modificar estado)
         data = request.data
         if 'estado' in data:
             es_activo = (data['estado'] == 'Activo')
@@ -358,7 +338,7 @@ class AdminUsuarioDetalleView(APIView):
 
 
 # ---------------------------------------------------------------------------
-# Reviews (GET público, POST requiere usuario, DELETE requiere admin)
+# Reviews 
 # ---------------------------------------------------------------------------
 
 def _serialize_review(r):
@@ -398,15 +378,12 @@ class ReviewsView(APIView):
             'fecha': date.today().isoformat(),
         }
         
-        # ACTUALIZACIÓN ESTILO AMAZON/MERCADO LIBRE (UPSERT):
-        # Si ya existe una opinión de este usuario para este producto, actualízala en lugar de duplicar.
         reviews_col.update_one(
             {'product_id': pk, 'username': request.user.username},
             {'$set': review_data},
             upsert=True
         )
         
-        # Obtenemos el documento oficial guardado para devolverlo serializado
         saved_review = reviews_col.find_one({'product_id': pk, 'username': request.user.username})
         return Response({'mensaje': 'Reseña guardada o actualizada exitosamente.', 'review': _serialize_review(saved_review)}, status=200)
 
@@ -424,7 +401,7 @@ class AdminReviewDetalleView(APIView):
         return Response({'mensaje': f'Review {review_id} eliminada.'})
 
 # ---------------------------------------------------------------------------
-# Direcciones de Envío (Requiere Usuario)
+# Direcciones de Envío
 # ---------------------------------------------------------------------------
 class DireccionesView(APIView):
     permission_classes = [IsUsuario]
@@ -442,11 +419,9 @@ class DireccionesView(APIView):
         if not nombre or not calle or not ciudad or not cp:
             return Response({'error': 'Falta información obligatoria del domicilio.'}, status=400)
 
-        # Si el cliente no tenía direcciones previas, esta primera nace como predeterminada
         conteo = addresses_col.count_documents({'username': request.user.username})
         
         last = addresses_col.find_one(sort=[('id', -1)])
-        # CORREGIDO: Usamos date.today().toordinal() en minúscula para evitar el error de Pylance
         new_id = str(int(last['id']) + 1) if (last and last.get('id', '').isdigit()) else str(date.today().toordinal() + conteo + 1)
 
         nueva_dir = {
@@ -470,28 +445,22 @@ class DireccionesView(APIView):
         return Response({'mensaje': 'Domicilio eliminado.'})
 
 # ---------------------------------------------------------------------------
-# Tarjetas de Pago (Requiere Usuario)
+# Tarjetas de Pago 
 # ---------------------------------------------------------------------------
-from api.db import db # Para acceder a db.tarjetas (o usa db = get_db() si tienes esa función)
-
 class TarjetasView(APIView):
     permission_classes = [IsUsuario]
 
     def get(self, request):
-        # Devuelve las tarjetas guardadas por el cliente
-        tarjetas = list(db.tarjetas.find({'username': request.user.username}, PROJECTION))
+        tarjetas = list(tarjetas_col.find({'username': request.user.username}, PROJECTION))
         for t in tarjetas:
-            # En la línea de abajo, si PROJECTION elimina _id, igual no existirá. 
-            # Si te da error de KeyError '_id', quita PROJECTION arriba y actívalo manual.
-            if '_id' in t: t['id'] = str(t.pop('_id')) 
+            if '_id' in t: 
+                t['id'] = str(t.pop('_id')) 
         return Response({'tarjetas': tarjetas})
 
     def post(self, request):
-        # Guardar una nueva tarjeta
         data = request.data
         numero_completo = str(data.get('numero', ''))
         
-        # Validaciones básicas
         if not numero_completo or len(numero_completo) < 4:
             return Response({'error': 'Número de tarjeta inválido.'}, status=400)
             
@@ -502,46 +471,9 @@ class TarjetasView(APIView):
             'fecha_expiracion': data.get('fecha_expiracion', '')
         }
         
-        db.tarjetas.insert_one(nueva_tarjeta)
+        tarjetas_col.insert_one(nueva_tarjeta)
         nueva_tarjeta.pop('_id', None)
         return Response({'mensaje': 'Tarjeta guardada.', 'tarjeta': nueva_tarjeta}, status=201)
-
-
-# ---------------------------------------------------------------------------
-# Tarjetas de Pago (Requiere Usuario)
-# ---------------------------------------------------------------------------
-class TarjetasView(APIView):
-    permission_classes = [IsUsuario]
-
-    def get(self, request):
-        # Devuelve las tarjetas guardadas por el cliente
-        tarjetas = list(db.tarjetas.find({'username': request.user.username}, PROJECTION))
-        for t in tarjetas:
-            # En la línea de abajo, si PROJECTION elimina _id, igual no existirá. 
-            # Si te da error de KeyError '_id', quita PROJECTION arriba y actívalo manual.
-            if '_id' in t: t['id'] = str(t.pop('_id')) 
-        return Response({'tarjetas': tarjetas})
-
-    def post(self, request):
-        # Guardar una nueva tarjeta
-        data = request.data
-        numero_completo = str(data.get('numero', ''))
-        
-        # Validaciones básicas
-        if not numero_completo or len(numero_completo) < 4:
-            return Response({'error': 'Número de tarjeta inválido.'}, status=400)
-            
-        nueva_tarjeta = {
-            'username': request.user.username,
-            'numero_oculto': f"**** **** **** {numero_completo[-4:]}",
-            'nombre_titular': data.get('nombre', '').strip(),
-            'fecha_expiracion': data.get('fecha_expiracion', '')
-        }
-        
-        db.tarjetas_col.insert_one(nueva_tarjeta)
-        nueva_tarjeta.pop('_id', None)
-        return Response({'mensaje': 'Tarjeta guardada.', 'tarjeta': nueva_tarjeta}, status=201)
-
 
 
 # ---------------------------------------------------------------------------
@@ -560,11 +492,8 @@ def asistente_ia(request):
             if not mensaje_usuario:
                 return JsonResponse({'error': 'Falta enviar el mensaje'}, status=400)
 
-            # 1. CONSULTAMOS EL CATÁLOGO EN VIVO DESDE MONGODB EN UBUNTU
-            # Traemos solo los campos necesarios para no saturar a la IA
             productos_db = list(products_col.find({}, {'_id': 0, 'nombre': 1, 'precio': 1, 'stock': 1, 'categoria': 1, 'marca': 1}))
             
-            # 2. FORMATEAMOS EL INVENTARIO EN UN TEXTO LEGIBLE PARA EL MODELO
             catalogo_texto = ""
             for p in productos_db:
                 nombre = p.get('nombre', 'Producto')
@@ -576,7 +505,6 @@ def asistente_ia(request):
 
             model = genai.GenerativeModel('gemini-3.5-flash')
             
-            # 3. INYECTAMOS EL CATÁLOGO Y REGLAS DE NEGOCIO EN EL PROMPT DEL SISTEMA
             prompt = f"""
             Eres el asistente virtual inteligente de ventas y soporte técnico de la tienda 'JafosTechnologies Store'.
             Debes ser amable, profesional, perspicaz y dar respuestas concisas (máximo 2 o 3 párrafos cortos).
@@ -598,13 +526,11 @@ def asistente_ia(request):
                 return JsonResponse({'respuesta': respuesta.text}, status=200)
             except Exception as e:
                 error_str = str(e)
-                # Si algún día se llega a saturar la cuota (Error 429 / Quota):
                 if '429' in error_str or 'Quota' in error_str or 'rate' in error_str.lower():
                     return JsonResponse({
                         'respuesta': '¡Vaya! En este momento hay muchos clientes consultando nuestro catálogo al mismo tiempo. Por favor, dame unos segundos para procesar todo y vuelve a preguntarme. 🤖⏳'
-                    }, status=200) # <-- Al devolver status 200, la app lo muestra en el chat y NO saca error rojo
+                    }, status=200)
                 
-                # Para cualquier otra intermitencia:
                 return JsonResponse({
                     'respuesta': 'Una disculpa, tuve una breve intermitencia al consultar el inventario. ¿Podrías repetirme tu pregunta?'
                 }, status=200)
