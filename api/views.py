@@ -15,7 +15,7 @@ from rest_framework import status
 import jwt
 import google.generativeai as genai
 
-from api.db import users as users_col, products as products_col, orders as orders_col, reviews as reviews_col, addresses as addresses_col
+from api.db import users as users_col, products as products_col, orders as orders_col, reviews as reviews_col, addresses as addresses_col, tarjetas as tarjetas_col
 from api.permissions import IsAdmin, IsUsuario
 
 PROJECTION = {'_id': 0}
@@ -155,6 +155,8 @@ class ComprasView(APIView):
     def post(self, request):
         product_id = request.data.get('product_id')
         quantity = int(request.data.get('quantity', 1))
+        # 1. RECIBIR MÉTODO DE PAGO (Por defecto Efectivo si no lo envían)
+        metodo_pago = request.data.get('metodo_pago', 'Efectivo')
 
         product = products_col.find_one({'id': product_id}, PROJECTION)
         if not product:
@@ -163,18 +165,22 @@ class ComprasView(APIView):
             return Response({'error': 'Stock insuficiente.'}, status=400)
 
         products_col.update_one({'id': product_id}, {'$inc': {'stock': -quantity}})
+        
+        # 2. DEFINIR EL ESTADO INICIAL
+        estado_inicial = "Pagada" if metodo_pago == "Tarjeta" else "Pendiente"
+        
         order = {
             'username': request.user.username,
             'product_id': product_id,
             'nombre': product['nombre'],
             'quantity': quantity,
             'total': product['precio'] * quantity,
-            'estado': 'Activa',  # <-- Campo para filtrado de órdenes
+            'metodo_pago': metodo_pago, # Guardamos cómo pagó
+            'estado': estado_inicial,   # "Pagada" o "Pendiente"
         }
         orders_col.insert_one(order)
         order.pop('_id', None)
         return Response({'mensaje': 'Compra realizada.', 'orden': order}, status=201)
-
 
 # ---------------------------------------------------------------------------
 # Admin: órdenes y cancelación con devolución de stock
@@ -462,6 +468,80 @@ class DireccionesView(APIView):
         if result.deleted_count == 0:
             return Response({'error': 'Dirección no encontrada.'}, status=404)
         return Response({'mensaje': 'Domicilio eliminado.'})
+
+# ---------------------------------------------------------------------------
+# Tarjetas de Pago (Requiere Usuario)
+# ---------------------------------------------------------------------------
+from api.db import db # Para acceder a db.tarjetas (o usa db = get_db() si tienes esa función)
+
+class TarjetasView(APIView):
+    permission_classes = [IsUsuario]
+
+    def get(self, request):
+        # Devuelve las tarjetas guardadas por el cliente
+        tarjetas = list(db.tarjetas.find({'username': request.user.username}, PROJECTION))
+        for t in tarjetas:
+            # En la línea de abajo, si PROJECTION elimina _id, igual no existirá. 
+            # Si te da error de KeyError '_id', quita PROJECTION arriba y actívalo manual.
+            if '_id' in t: t['id'] = str(t.pop('_id')) 
+        return Response({'tarjetas': tarjetas})
+
+    def post(self, request):
+        # Guardar una nueva tarjeta
+        data = request.data
+        numero_completo = str(data.get('numero', ''))
+        
+        # Validaciones básicas
+        if not numero_completo or len(numero_completo) < 4:
+            return Response({'error': 'Número de tarjeta inválido.'}, status=400)
+            
+        nueva_tarjeta = {
+            'username': request.user.username,
+            'numero_oculto': f"**** **** **** {numero_completo[-4:]}",
+            'nombre_titular': data.get('nombre', '').strip(),
+            'fecha_expiracion': data.get('fecha_expiracion', '')
+        }
+        
+        db.tarjetas.insert_one(nueva_tarjeta)
+        nueva_tarjeta.pop('_id', None)
+        return Response({'mensaje': 'Tarjeta guardada.', 'tarjeta': nueva_tarjeta}, status=201)
+
+
+# ---------------------------------------------------------------------------
+# Tarjetas de Pago (Requiere Usuario)
+# ---------------------------------------------------------------------------
+class TarjetasView(APIView):
+    permission_classes = [IsUsuario]
+
+    def get(self, request):
+        # Devuelve las tarjetas guardadas por el cliente
+        tarjetas = list(db.tarjetas.find({'username': request.user.username}, PROJECTION))
+        for t in tarjetas:
+            # En la línea de abajo, si PROJECTION elimina _id, igual no existirá. 
+            # Si te da error de KeyError '_id', quita PROJECTION arriba y actívalo manual.
+            if '_id' in t: t['id'] = str(t.pop('_id')) 
+        return Response({'tarjetas': tarjetas})
+
+    def post(self, request):
+        # Guardar una nueva tarjeta
+        data = request.data
+        numero_completo = str(data.get('numero', ''))
+        
+        # Validaciones básicas
+        if not numero_completo or len(numero_completo) < 4:
+            return Response({'error': 'Número de tarjeta inválido.'}, status=400)
+            
+        nueva_tarjeta = {
+            'username': request.user.username,
+            'numero_oculto': f"**** **** **** {numero_completo[-4:]}",
+            'nombre_titular': data.get('nombre', '').strip(),
+            'fecha_expiracion': data.get('fecha_expiracion', '')
+        }
+        
+        db.tarjetas_col.insert_one(nueva_tarjeta)
+        nueva_tarjeta.pop('_id', None)
+        return Response({'mensaje': 'Tarjeta guardada.', 'tarjeta': nueva_tarjeta}, status=201)
+
 
 
 # ---------------------------------------------------------------------------

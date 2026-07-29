@@ -13,7 +13,8 @@ from api.views import (
     ReviewsView,
     AdminReviewDetalleView,
     DireccionesView,
-    asistente_ia, # <--- 1. Agregamos nuestra función aquí
+    asistente_ia, 
+    TarjetasView, # <--- 1. IMPORTAMOS TarjetasView AQUÍ
 )
 
 urlpatterns = [
@@ -33,6 +34,8 @@ urlpatterns = [
     path('registro/', RegistroView.as_view()),
     path('direcciones/', DireccionesView.as_view()),
     path('direcciones/<str:pk>/', DireccionesView.as_view()),
-    # 2. Agregamos la ruta del chatbot al final
     path('chatbot/', asistente_ia, name='chatbot'),
+    
+    # 2. AGREGAMOS LA RUTA PARA LAS TARJETAS AL FINAL
+    path('tarjetas/', TarjetasView.as_view(), name='tarjetas'),
 ]

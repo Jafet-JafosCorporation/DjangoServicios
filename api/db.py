@@ -31,3 +31,6 @@ reviews  = _LazyCollection('reviews')
 
 # <-- AGREGAMOS NUESTRA NUEVA COLECCIÓN CON EL MISMO PATRÓN PEREZOSO -->
 addresses = _LazyCollection('addresses')
+
+# <-- AGREGAMOS LA NUEVA COLECCIÓN PARA LAS TARJETAS -->
+tarjetas = _LazyCollection('tarjetas')
